@@ -5,15 +5,15 @@ output: html_document
 ---
 
 ```{r,include=FALSE}
-CLEAN=FALSE
-VERBOSE=FALSE
+CLEAN=FALSE   ## redownload data, refit models
+VERBOSE=FALSE ## spit out all plots, not just ones for paper
 library(ecoforecastR)
-n.iter = 5000
-n.iter.fx = 500
+n.iter = 5000   ## number of MCMC steps in fitting
+n.iter.fx = 500 ## ensemble size when forecasting
 ## Sylvania
 lat = 46.2420
 lon = -89.3476
-train = 16*48
+train = 16*48  ## number of observations used during calibration
 ```
 
 To illustrate the application of the analytical concepts above, conside a simple example of fitting a dynamic linear model to Net Ecosystem Exchange (NEE) data from an eddy covariance tower, and then using that model to make a short-term forecast. Training data were downloaded for the Sylvania Wilderness Ameriflux tower for 2016 from Ankur Desai's real-time data server (http://flux.aos.wisc.edu/twiki/bin/view/Main/LabData). Sylvania is an old-growth Northern Hardwood-Hemlock forest located in upper peninsula Michigan (`r lat`,`r lon`). For purposes of model calibration the most recent `r train/48` days of data were used.

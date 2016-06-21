@@ -13,7 +13,7 @@
 ##' @description Fits a Bayesian state-space dynamic linear model using JAGS
 fit_dlm <- function(model=NULL,data){
 
-  obs   = model$obs
+  obs    = model$obs
   fixed  = model$fixed
   random = model$random
   n.iter = ifelse(is.null(model$n.iter),5000,model$n.iter)
