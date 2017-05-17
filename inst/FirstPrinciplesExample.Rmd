@@ -67,12 +67,20 @@ if(!file.exists("FEfit.RData") | CLEAN ){
   load("FEfit.RData")
 }
 
+## remove burnin
+burnin <- 0.2*nrow(FEfit[[1]][[1]])
+FEfit$params <- window(FEfit$params,start=burnin)
+FEfit$predict <- window(FEfit$predict,start=burnin)
+
+## plot timeseries w/ CI
 plot_ss(cal.doy,FEfit,ylab="NEE",xlab="Day of Year",main="Calibration",
         ylim=quantile(as.matrix(FEfit$predict),c(0.005,0.995)))
+
 if(VERBOSE){
   plot(FEfit$params)
   #pairs(as.matrix(FEfit$params))
 }
+
 cal.parms <- summary(FEfit$params)  ## calibration parameters
 
 ```
@@ -90,7 +98,9 @@ ecoforecastR R package (version `r packageVersion("ecoforecastR")`, available on
 The fit itself shows that this simple linear model with two covariates can capture the diurnal cycle of the flux data, though with condiderable uncertainty during periods of missing data. Following the standard atmospheric sign convention for NEE data (negative values are uptake into the ecosystem), we observe large negative uptakes of carbon during the day and moderate positive losses at night. In terms of exogenous sensitivity, this cycle is driven primarily by the the expected negative slope for PAR, with a CI that does not overlap with zero. Air temperature likewise shows a negative relationship, but this slope does overlap zero. In terms of endogenous stability, the slope of the internal stability term is large (`r cal.parms$statistics['beta_IC','Mean']`), though stable (less than 1) with a CI that was far from 0, thus indicating significant system memory in NEE. In terms of the error terms, the observation error had much higher precision (lower variance), than the process error, suggesting that much of the observed NEE variability represents real variation that the simple model is not capturing. This conclusion is somewhat at odds with the standard literature in the flux community, which acknowledges substantial observation errors in fluxes (CITE). The present analysis is purely for proof-of-concept purposes, and a more in depth analysis could be improved in a number of specific ways. First, while there is some debate on the exact shape of the flux error funciton (CITE), a number of researchers have suggested that a fat-tailed Laplace distribution is more appropriate for eddy-covariance than a Normal. Second, there is general agreement that eddy-covariance data is heteroskedastic (the error increases with the magnitude of the flux) and that this heteroskedasticity is asymmetric (negative fluxes have lower error than postive fluxes, as the nighttime conditions associated with respiration face stiller air and more advective losses). Third, established methods for quantifying the random error in eddy-covariance could be used to construct informative priors on the observation error. Indeed, such estimates now often come with FLUXNET and NEON flux products (CITE). Finally, it is well known that separating process and observation error can be challenging in state-space models, and thus a general suggestion is that any more in depth analysis on any data, not just eddy-covariance, pay close attention to observation error and make use of informative priors wherever they can be inferred.  Nonetheless, this model, in its extreme simplicity, represents a useful baseline for evaluating the performance of any nonlinear statistical or process-based model.
 
 ```{r,echo=FALSE}
-knitr::kable(cbind(cal.parms$statistics[,1:2],cal.parms$quantiles[,c(1,5)]))
+FEfit.summary <- cbind(cal.parms$statistics[,1:2],cal.parms$quantiles[,c(1,5)]) 
+FEfit.summary <- t(apply(FEfit.summary,1,format,digits=3))
+knitr::kable(FEfit.summary)
 ```
 
 **Table XX** Posterior mean, standard deviation, and 95% CI for fit parameters
@@ -379,7 +389,8 @@ sim.rel.cum <- diff(c(0,varI.cum,varIP.cum,varIPD.cum,varIPDE.cum))/varIPDE.cum
 var.part.table <- rbind(rel.mean,sim.rel.mean,sim.rel.cum)
 colnames(var.part.table) <- c("IC","Params","Drivers","Error")
 rownames(var.part.table) <- c("Analytical",'Simulation','Cumul. Sim.')
-knitr::kable(var.part.table)
+
+knitr::kable(format(as.data.frame(var.part.table),digits=3))
 ```
 
 **TABLE XX** Mean partitioning of forecast error in instantaneous NEE according to both analytical and simulation approaches. Both approaches are in general agreement about the relative importance of the different sources of error. By contrast, the uncertainty in the cumulative NEE (Cumul. Sim.) shows that the contribution of process error is much lower, as many errors average out, and parameter error contributes much more to the overall uncertainty._
