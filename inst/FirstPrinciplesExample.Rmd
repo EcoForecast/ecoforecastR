@@ -1,7 +1,7 @@
 ---
-title: "First Principles: Example"
+title: 'First Principles: Example'
 author: "Michael Dietze"
-output: html_document
+output: word_document
 ---
 
 ```{r,include=FALSE}
@@ -22,13 +22,13 @@ To illustrate the application of the analytical concepts above, conside a simple
 ## read data
 if(!file.exists("flux.RData") | CLEAN){
   flux <- read.csv("http://flux.aos.wisc.edu/data/cheas/sylvania/flux/prelim/sylvaniaflux_2016.txt",header=FALSE,skip=18,row.names=NULL)
-  names <- apply(flux,2,function(x) as.character(x)[1])
-  units <-  apply(flux,2,function(x) as.character(x)[2])
-  flux <- sapply(flux[-(1:2),],function(x) as.numeric(as.character(x)))
+  names <- apply(flux,2,function(x) as.character(x)[1])  ## col names
+  units <-  apply(flux,2,function(x) as.character(x)[2]) ## col units 
+  flux  <- sapply(flux[-(1:2),],function(x) as.numeric(as.character(x)))
   flux[flux==-9999] <- NA
   flux[flux==-6999] <- NA
   colnames(flux) = names
-  flux = as.data.frame(flux)
+  flux <- as.data.frame(flux)
   time <- as.POSIXct(strptime(paste(flux$YEAR,flux$DTIME),"%Y %j","GMT")) + (flux$DTIME-floor(flux$DTIME))*86400
   ## apply U* filter
   flux$NEE[flux$`Flagu*` > 0 ] = NA
@@ -44,33 +44,22 @@ plot(time,flux$NEE,type='l')
 ## drivers = TA, TS1, TS2, PREC, RH, PRESS, VPD, SWC1, SWC2, PAR, etc.
 cor(flux[,c("NEE","TA","TS1","TS2","PREC","RH","VPD","SWC1","SWC2","PAR")],use = "pairwise.complete")
 plot(flux$PAR,-flux$NEE)
-#summary(lm(NEE~PAR,flux))
 }
 
 ## find latest data
 has.dat = apply(is.na(flux),1,sum)
-latest = rev(which(has.dat < 40))[1]
+latest = rev(which(has.dat < 40))[1] ## threshold by number of variables that have missing data
 
-sel = rev(latest - 0:train)
-data = flux[sel,]
-my.time = time[sel]
-cal.doy  = (as.numeric(as.POSIXct(my.time,tz=GMT)) - as.numeric(as.POSIXct("2016/01/01","GMT")) )/86400
+## subset just the most recent data for training
+sel     <- rev(latest - 0:train)
+data    <- flux[sel,]
+my.time <- time[sel]
+cal.doy <- (as.numeric(as.POSIXct(my.time,tz=GMT)) - as.numeric(as.POSIXct("2016/01/01","GMT")) )/86400  ## calibration Day of Year
 ```
 
 
 ```{r,echo=FALSE}
-if(!file.exists("RWfit.RData") | CLEAN ){
-  RWfit <- fit_dlm(list(obs="NEE",n.iter=n.iter),data)
-  save(RWfit,file="RWfit.RData")
-}else{
-  load("RWfit.RData")
-}
-
-if(VERBOSE){
-  plot_ss(cal.doy,RWfit,ylab="NEE",xlab="time",main="Random Walk model")
-  plot(RWfit$params)
-}
-
+## Fit basic fixed effects (FE model)
 if(!file.exists("FEfit.RData") | CLEAN ){
   FEfit <- fit_dlm(model=list(obs="NEE",fixed="~ PAR + TA",n.iter=n.iter),data)
   save(FEfit,file="FEfit.RData")
@@ -84,13 +73,13 @@ if(VERBOSE){
   plot(FEfit$params)
   #pairs(as.matrix(FEfit$params))
 }
-cal.parms <- summary(FEfit$params)
+cal.parms <- summary(FEfit$params)  ## calibration parameters
 
 ```
 
-**Figure XX** Dynamical linear model median (solid line) and 95% CI (shaded area) fit to observed flux data (+). 
+**Figure XX** _Dynamical linear model median (solid line) and 95% CI (shaded area) fit to observed flux data (+)._
 
-The dynamic linear model was fit using top-of-tower air temperature (Ta) and photosythetically active radiation (PAR) as covariates. The model was fit in a state-space framework where $NEE_o$ is the observed NEE values, $NEE$ is the latent (unobserved) true value of NEE, $\tau_o$ is the observation error, $\tau_p$ is the process error, and $\beta$ are the regression coefficients
+The dynamic linear model was fit using top-of-tower air temperature (Ta) and photosythetically active radiation (PAR) as covariates. PAR and Ta were choosen as covariates from among the set of available explanatory varibles in the Ameriflux data based on prior experience with ecosystem models and because they had highest correlations with observed fluxes (`r cor(flux[,"NEE"],flux[,"PAR"],use = "pairwise.complete")` and `r cor(flux[,"NEE"],flux[,"TA"],use = "pairwise.complete")` respectively) from among the drivers that are also available in weather forecasts. The model was fit in a state-space framework where $NEE_o$ is the observed NEE values, $NEE$ is the latent (unobserved) true value of NEE, $\tau_o$ is the observation error, $\tau_p$ is the process error, and $\beta$ are the regression coefficients
 
 $$NEE_{t+1} \sim N(\beta_0 NEE_t + \beta_1 + \beta_2 Ta + \beta_3 PAR, \tau_p$$
 $$NEE_{o,t} \sim N(NEE_{t},\tau_o)$$
@@ -100,7 +89,7 @@ ecoforecastR R package (version `r packageVersion("ecoforecastR")`, available on
 
 The fit itself shows that this simple linear model with two covariates can capture the diurnal cycle of the flux data, though with condiderable uncertainty during periods of missing data. Following the standard atmospheric sign convention for NEE data (negative values are uptake into the ecosystem), we observe large negative uptakes of carbon during the day and moderate positive losses at night. In terms of exogenous sensitivity, this cycle is driven primarily by the the expected negative slope for PAR, with a CI that does not overlap with zero. Air temperature likewise shows a negative relationship, but this slope does overlap zero. In terms of endogenous stability, the slope of the internal stability term is large (`r cal.parms$statistics['beta_IC','Mean']`), though stable (less than 1) with a CI that was far from 0, thus indicating significant system memory in NEE. In terms of the error terms, the observation error had much higher precision (lower variance), than the process error, suggesting that much of the observed NEE variability represents real variation that the simple model is not capturing. This conclusion is somewhat at odds with the standard literature in the flux community, which acknowledges substantial observation errors in fluxes (CITE). The present analysis is purely for proof-of-concept purposes, and a more in depth analysis could be improved in a number of specific ways. First, while there is some debate on the exact shape of the flux error funciton (CITE), a number of researchers have suggested that a fat-tailed Laplace distribution is more appropriate for eddy-covariance than a Normal. Second, there is general agreement that eddy-covariance data is heteroskedastic (the error increases with the magnitude of the flux) and that this heteroskedasticity is asymmetric (negative fluxes have lower error than postive fluxes, as the nighttime conditions associated with respiration face stiller air and more advective losses). Third, established methods for quantifying the random error in eddy-covariance could be used to construct informative priors on the observation error. Indeed, such estimates now often come with FLUXNET and NEON flux products (CITE). Finally, it is well known that separating process and observation error can be challenging in state-space models, and thus a general suggestion is that any more in depth analysis on any data, not just eddy-covariance, pay close attention to observation error and make use of informative priors wherever they can be inferred.  Nonetheless, this model, in its extreme simplicity, represents a useful baseline for evaluating the performance of any nonlinear statistical or process-based model.
 
-```{r}
+```{r,echo=FALSE}
 knitr::kable(cbind(cal.parms$statistics[,1:2],cal.parms$quantiles[,c(1,5)]))
 ```
 
@@ -111,81 +100,95 @@ knitr::kable(cbind(cal.parms$statistics[,1:2],cal.parms$quantiles[,c(1,5)]))
 ```{r,echo=FALSE}
 if(!file.exists("NOAA.RData") | CLEAN){
   library(rnoaa)
-  gefs_variables()
-  TA = gefs("Temperature_height_above_ground_ens",lat,lon,raw=TRUE)
-  SW = gefs("Downward_Short-Wave_Radiation_Flux_surface_6_Hour_Average_ens",lat,lon,raw=TRUE)
-  # note: first column might be an indicator?
+  #gefs_variables()
+  TA <- gefs("Temperature_height_above_ground_ens",lat,lon,raw=TRUE)
+  SW <- gefs("Downward_Short-Wave_Radiation_Flux_surface_6_Hour_Average_ens",lat,lon,raw=TRUE)
 
+  if(VERBOSE){
+    ## plot shortwave radiation ensemble
+    SW_time <- seq(to=384,length=ncol(SW$data),by=6)
+    plot(SW_time,SW$data[1,],ylim=range(SW$data),type='l')
+    for(i in 2:nrow(SW$data)){
+      lines(SW_time,SW$data[i,],type='l')
+    }
+    ci_SW <- apply(SW$data,2,quantile,c(0.05,0.5,0.95))
+    plot(SW_time,SW$data[1,],ylim=range(SW$data),type='n')
+    ciEnvelope(SW_time,ci_SW[1,],ci_SW[3,],col="lightBlue")
+    lines(SW_time,ci_SW[2,],lwd=2)
+    
+    ## plot air temperature ensemble
+    TA_time = seq(to=384,length=ncol(TA$data),by=6)
+    ci_TA <- apply(TA$data,2,quantile,c(0.05,0.5,0.95))
+    plot(TA_time,TA$data[1,],ylim=range(TA$data),type='n')
+    ciEnvelope(TA_time,ci_TA[1,],ci_TA[3,],col="lightBlue")
+    lines(TA_time,ci_TA[2,],lwd=2)
+  }
 
-SW_time =  seq(to=384,length=ncol(SW$data),by=6)
-plot(SW_time,SW$data[1,],ylim=range(SW$data),type='l')
-for(i in 2:nrow(SW$data)){
-    lines(SW_time,SW$data[i,],type='l')
-}
-ci_SW <- apply(SW$data,2,quantile,c(0.05,0.5,0.95))
-plot(SW_time,SW$data[1,],ylim=range(SW$data),type='n')
-ciEnvelope(SW_time,ci_SW[1,],ci_SW[3,],col="lightBlue")
-lines(SW_time,ci_SW[2,],lwd=2)
+  ## organize into newdata
+  nens  <- nrow(TA$data)
+  ntime <- min(c(length(TA_time),length(SW_time)))
+  nvar  <- 3
+  meta <- list() ## metadata on dimensions
+  meta[[1]] <- 1:nens
+  meta[[2]] <- seq(to=384,length=ntime,by=6)
+  meta[[3]] <- c("Intercept","PAR","TA")
+  newdata   <- array(NA,dim = c(nens,ntime,nvar),dimnames = meta)
+  newdata[,,"TA"]  <- TA$data[,-1] - 273.15
+  newdata[,,"PAR"] <- SW$data[,]*0.486/0.235 
+  newdata[,,"Intercept"] <- 1
 
+  ########################################
+  ## DOWNSCALE new data from 6hr to 30 min
+  ########################################
+  
+  ## original time: day of year
+  start.time <- as.POSIXct(as.Date(TA$forecast_date,format = "%Y%m%d",tz=GMT)) +
+    as.numeric(TA$forecast_time)/100*3600
+  old.doy  <- as.numeric(start.time) - as.numeric(as.POSIXct("2016/01/01","GMT")) + meta[[2]]*3600
+  old.doy  <- old.doy / 86400
+  ## new time: day of year
+  new.time <- seq(0,rev(meta[[2]])[1],by=0.5)
+  new.doy  <- as.numeric(start.time) - as.numeric(as.POSIXct("2016/01/01","GMT")) + new.time*3600
+  new.doy  <- new.doy / 86400
+  ## use spline functions to downscale each ensemble member from old time to new time
+  fTA      <- apply(newdata[,,"TA"],1,function(x){splinefun(meta[[2]],x, method = "monoH.FC")})
+  TA.ds    <- sapply(fTA,function(x){x(new.time)})
+  ## for PAR, calculate potential radiation (shortwave, W/m2) and convert to PAR
+  rpot <- solar_geom(new.doy,lon,lat)*0.486 /.235
+  agg  <- c(1,rep(1:length(old.doy),each=round(length(new.doy)/length(old.doy)))) ## aggregation index, from new to old
+  rpot.agg <- tapply(rpot,agg,mean)
+  PAR.ds   <- apply(newdata[,,"PAR"],1,function(x){rpot*x[agg]/rpot.agg[agg]})
 
-TA_time = seq(to=384,length=ncol(TA$data),by=6)
-ci_TA <- apply(TA$data,2,quantile,c(0.05,0.5,0.95))
-plot(TA_time,TA$data[1,],ylim=range(TA$data),type='n')
-ciEnvelope(TA_time,ci_TA[1,],ci_TA[3,],col="lightBlue")
-lines(TA_time,ci_TA[2,],lwd=2)
-
-#plot(TA_time,TA$data[1,],ylim=range(TA$data),type='l')
-#for(i in 2:nrow(TA$data)){
-#  lines(TA_time,TA$data[i,],type='l')
-#}
-
-## organize into newdata
-nens = nrow(TA$data)
-ntime = min(c(length(TA_time),length(SW_time)))
-nvar = 3
-meta <- list()
-meta[[1]] = 1:nens
-meta[[2]] = seq(to=384,length=ntime,by=6)
-meta[[3]] = c("Intercept","PAR","TA")
-newdata = array(NA,dim = c(nens,ntime,nvar),dimnames = meta)
-newdata[,,"TA"] = TA$data[,-1] - 273.15
-newdata[,,"PAR"] = SW$data[,]*0.486/0.235 
-newdata[,,"Intercept"] = 1
-
-## DOWNSCALE ****************
-start.time = as.POSIXct(as.Date(TA$forecast_date,format = "%Y%m%d",tz=GMT)) +
-             as.numeric(TA$forecast_time)/100*3600
-new.time = seq(0,rev(meta[[2]])[1],by=0.5)
-old.doy  = as.numeric(start.time) - as.numeric(as.POSIXct("2016/01/01","GMT")) + meta[[2]]*3600
-old.doy  = old.doy / 86400
-new.doy  = as.numeric(start.time) - as.numeric(as.POSIXct("2016/01/01","GMT")) + new.time*3600
-new.doy  = new.doy / 86400
-fTA   <- apply(newdata[,,"TA"],1,function(x){splinefun(meta[[2]],x, method = "monoH.FC")})
-TA.ds <- sapply(fTA,function(x){x(new.time)})
-
-rpot <- solar_geom(new.doy,lon,lat)*0.486 /.235
-plot(new.doy,rpot,type='l')
-lines(old.doy,apply(newdata[,,"PAR"],2,median),col=2)
-agg = c(1,rep(1:length(old.doy),each=round(length(new.doy)/length(old.doy))))
-rpot.agg = tapply(rpot,agg,mean)
-lines(old.doy,rpot.agg,col=3)
-PAR.ds <- apply(newdata[,,"PAR"],1,function(x){rpot*x[agg]/rpot.agg[agg]})
-
-meta.ds <- list()
-meta.ds[[1]] = 1:nens
-meta.ds[[2]] = new.doy
-meta.ds[[3]] = c("Intercept","PAR","TA")
-newdata.ds = array(NA,dim = c(nens,length(new.doy),nvar),dimnames = meta.ds)
-newdata.ds[,,"TA"] = t(TA.ds)
-newdata.ds[,,"PAR"] = t(PAR.ds) 
-newdata.ds[,,"Intercept"] = 1
-
+  if(VERBOSE){
+    plot(new.doy,rpot,type='l')
+    lines(old.doy,apply(newdata[,,"PAR"],2,median),col=2)
+    lines(old.doy,rpot.agg,col=3)
+  }
+  
+  ## update metadata
+  meta.ds      <- list()
+  meta.ds[[1]] <- 1:nens
+  meta.ds[[2]] <- new.doy
+  meta.ds[[3]] <- c("Intercept","PAR","TA")
+  
+  ## update newdata object (ds = downscaled)
+  newdata.ds          <- array(NA,dim = c(nens,length(new.doy),nvar),dimnames = meta.ds)
+  newdata.ds[,,"TA"]  <- t(TA.ds)
+  newdata.ds[,,"PAR"] <- t(PAR.ds) 
+  newdata.ds[,,"Intercept"] <- 1
+  
   save(TA,SW,meta,meta.ds,newdata,newdata.ds,file="NOAA.RData")
 
+  ## Future To-do:
+  ##   * uncertainty in temporal downscaling
+  ##   * spatial downscaling & uncertainty
+  ##   * process error in forecast?
+  
 }else{
   load("NOAA.RData")
 }
 
+## plot downscaled driver data, with CI for spread
 ci_TA <- apply(newdata.ds[,,"TA"],2,quantile,c(0.05,0.5,0.95))
 plot(meta.ds[[2]],ci_TA[2,],ylim=range(ci_TA),type='n',ylab="Air Temperature",xlab="Day of Year")
 ciEnvelope(meta.ds[[2]],ci_TA[1,],ci_TA[3,],col="lightBlue")
@@ -198,22 +201,29 @@ lines(meta.ds[[2]],ci_PAR[2,],lwd=2)
 ```
 
 
-
 ```{r, echo=FALSE}
-# FE_pred <- predict_dlm(FEfit,newdata,n.iter=n.iter.fx)
-# plot_ss(meta[[2]],FE_pred,ylab="NEE",xlab="time") #add=TRUE
+## predict fluxes using downscaled drivers
 FE_pred.ds <- predict_dlm(FEfit,newdata.ds,n.iter=n.iter.fx)
-plot_ss(meta.ds[[2]],FE_pred.ds,ylab="NEE",xlab="time")
+plot_ss(meta.ds[[2]],FE_pred.ds,ylab="NEE",xlab="Day of Year")
 ```
 
-The NEE was then forecast for the next 16 days using the fit model and weather forecast data from NOAA's Global Ensemble Forecast System (GEFS), which was downloaded using the rNOAA package ((version `r packageVersion("rNOAA")`). Driver uncertainty was captured by the spread of the 21 members of the ensemble forecast. Air temperature data was downscaled to 30 min by fitting a spline through the six-hourly forecast product. The PAR forecast represents a six-hour average, so this was downscaled to 30 min in proportion to an expected incident radiation based on solar geometry. This approach is equivalent to assuming a constant cloudiness for each six-hour period.
+**FIGURE XX** _Input weather forecast drivers and predicted NEE. Driver data show a noticible pattern of increasing uncertainty with time. Forecast shows a clear diurnal pattern, but little variation in day-to-day predictions._
 
+The NEE was then forecast for the next 16 days using the fit model and weather forecast data from NOAA's Global Ensemble Forecast System (GEFS), which was downloaded using the rNOAA package ((version `r packageVersion("rNOAA")`). Driver uncertainty was captured by the spread of the 21 members of the ensemble forecast. Air temperature data was downscaled to 30 min by fitting a spline through the six-hourly forecast product. The PAR forecast represents a six-hour average, so this was downscaled to 30 min in proportion to an expected incident radiation based on solar geometry. This approach is equivalent to assuming a constant cloudiness for each six-hour period. In general, confidence in the drivers was high for the first few days, but by the end driver forecasts show little day-to-day variability and large uncertainties. Again, this analysis is a simple proof-of-concept and considerably greater sophisitication could be put into the spatial and temporal downscaling of the driver data and the accounting for downscaling and process errors in the data product.
 
-Forecasts were made using a `r n.iter.fx` member ensemble, with each ensemble member sampling a set of drivers with replacement from the forecast ensemble. Similarly, parameters and initial conditions were sampled from the state-space posterior estimates, with the initial condition estimate being the final NEE state estimate from the calibration period.
+Forecasts were made using a `r n.iter.fx` member ensemble, with each ensemble member sampling a set of drivers with replacement from the forecast ensemble. Similarly, parameters and initial conditions were sampled from the state-space posterior estimates, with the initial condition estimate being the final NEE state estimate from the calibration period. Overall, forecasts showed a clear diurnal cycle, but uncertainties in forecast NEE were very high and showed very little day-to-day variability in the predictions. While the uncertainty in the forecast appears at first glance to be at a steady-state, there is a strong diurnal cycle to the predictive uncertainty, with higher uncertainty during the day, and a general trend of increasing uncertainty further into the future.
 
-The uncertainty in model predictions was partitioned using two different approaches. The first generated using the analytical approximation discussed previously. The second was generated by running a series of forecasts that included different sources of uncertainty, and estimating the effect of a process as the difference in variance between pairs of scenarios. Specifically, we started with just Initial Condition uncertainty and then sequentially added parameter uncertainty, driver uncertainty, and then process uncertainty. The results of these two approaches were qualitatively similar but differ slightly because of the sequential nature of the second approach, and because it accounts for the additional interactions and non-linearities not in the linear approximation. These results are summarized in terms of time series plots of the relative proportion of variance attributable to each term.
+The uncertainty in model predictions was partitioned using two different approaches. The first generated using the analytical approximation discussed previously. The second was generated by running a series of forecasts that included different sources of uncertainty, and estimating the effect of a process as the difference in variance between pairs of scenarios. Specifically, we started with just Initial Condition uncertainty and then sequentially added parameter uncertainty, driver uncertainty, and then process uncertainty. 
+
+The results of these two approaches were qualitatively similar but differ slightly because of the sequential nature of the second approach, and because it accounts for the additional interactions and non-linearities not in the linear approximation. These results are summarized in terms of time series plots of the relative proportion of variance attributable to each term (FIGURE) and a table of the mean fraction of uncertainty attributable to each source (TABLE). Overall, process error dominates the forecast from early on and remains relatively constant. Driver error shows a generally increasing trend, while parameter error shows a clear diurnal cycle but no trend. Finally, despite the non-trivial intrinsic stability of the system, the initial condition uncertainty decays quickly. Therefore, in the current forecast model, system memory is having a non-trivial impact within a day in affecting the diurnal cycle, but what limited day-to-day variability is observed in the forecast is driven fairly directly by the weather.
+
+By contrast, the uncertainty partitioning in the cumulative NEE over the entire 16 day forecast period is noticably different than than the average partitioning of the NEE for each 30 min period (FIGURE, TABLE). In particular, the contribution of process error is considerably smaller, as much of this variability is random, rather than systematic, and thus averages out over time. By contrast parameter errors contribute to the forecast systematically, and thus parameter error in cumulative NEE increases considerably in relative importance. Finally, the relative importance of driver error increases gradually over time and it's overall contribution is slightly higher than for instantaneous NEE. Overall, the contrast between the uncertainty in the instantaneous and cumulative NEE illustrates the impacts of aggregation across scale in understanding the relative contributions of different sources of uncertainty. A similar phenomena is expected when moving up spatial or taxanomic/functional scales (e.g. aggregating species into Families or functional types).
+
+The conclusions of this analyis are conditional on the current model structure. For example, a model with additional internal state variables (soil carbon, aboveground biomass, LAI, etc.) would include longer-term internal stability than NEE (days to centuries). This would increase the overall contribution of intrinsic stability to NEE dynamics over longer time-scales. Increasing the number of covariates would reduce the process error but increase the parameter and driver errors.  Using a more complex, nonlinear model would similarly decrease process error but increase parameter error. Whether the overall predictive uncertainty increased or decreased in these cases would be a model selection question. However, it is important to note that traditional model selection criteria (e.g. AIC) would only capture the trade-off between process and parameter errors, and would miss the impact of driver error. Therefore, from a predictive perspective, traditional model selection tends to select for models that are overly complex. Predictive uncertainty can be used explictly as a model selection criteria, but doing so requires an explicit statement of the time scale considered.
 
 ```{r,echo=FALSE}
+## Simulation approach to understanding uncertainty partitioning
+
 ## just initial condition uncertainty
 FE_pred.I <- predict_dlm(FEfit,newdata.ds,n.iter=n.iter.fx,include="I")
 
@@ -228,48 +238,62 @@ if(VERBOSE){
   plot_ss(meta.ds[[2]],FE_pred.IP,ylab="NEE",xlab="time")
   plot_ss(meta.ds[[2]],FE_pred.IPD,ylab="NEE",xlab="time")
 }
-```
+ 
+#################################################
+## plot uncertainty partitioning as a time series
+#################################################
 
-
-```{r,echo=FALSE}
 ## FULL
-plot_ss(meta.ds[[2]],FE_pred.ds,ylab="NEE",xlab="Day of Year")
 varIPDE <- apply(as.matrix(FE_pred.ds$predict),2,var)
 
 ## IPD
-ciIPD <- apply(as.matrix(FE_pred.IPD$predict),2,quantile,c(0.025,0.5,0.975))
-ciEnvelope(meta.ds[[2]],ciIPD[1,],ciIPD[3,],col="firebrick2")
+ciIPD  <- apply(as.matrix(FE_pred.IPD$predict),2,quantile,c(0.025,0.5,0.975))
 varIPD <- apply(as.matrix(FE_pred.IPD$predict),2,var)
 
 ## IP
-ciIP <- apply(as.matrix(FE_pred.IP$predict),2,quantile,c(0.025,0.5,0.975))
-ciEnvelope(meta.ds[[2]],ciIP[1,],ciIP[3,],col="lightGreen")
+ciIP  <- apply(as.matrix(FE_pred.IP$predict),2,quantile,c(0.025,0.5,0.975))
 varIP <- apply(as.matrix(FE_pred.IP$predict),2,var)
 
 ## I
-ciI <- apply(as.matrix(FE_pred.I$predict),2,quantile,c(0.025,0.5,0.975))
-ciEnvelope(meta.ds[[2]],ciI[1,],ciI[3,],col="violet")
-lines(meta.ds[[2]],ciI[2,],col="darkGreen",lwd=2)
+ciI  <- apply(as.matrix(FE_pred.I$predict),2,quantile,c(0.025,0.5,0.975))
 varI <- apply(as.matrix(FE_pred.I$predict),2,var)
+
+if(VERBOSE){
+  plot_ss(meta.ds[[2]],FE_pred.ds,ylab="NEE",xlab="Day of Year")
+  ciEnvelope(meta.ds[[2]],ciIPD[1,],ciIPD[3,],col="firebrick2")
+  ciEnvelope(meta.ds[[2]],ciIP[1,],ciIP[3,],col="lightGreen")
+  ciEnvelope(meta.ds[[2]],ciI[1,],ciI[3,],col="violet")
+  lines(meta.ds[[2]],ciI[2,],col="darkGreen",lwd=2)
+  
+  plot(meta.ds[[2]],varIPDE,ylab="variance",xlab="Day of Year",type='l')
+  
+  ## diurnal error
+  plot(meta.ds[[2]]-floor(meta.ds[[2]]),varIPDE)
+}
 
 ```
 
 
 ```{r,echo=FALSE}
-fit = FEfit
-pred = FE_pred.ds
+###########################################
+## Analytical partitioning of uncertainties
+###########################################
+# m's are slopes, V's are variances
+
+fit   <- FEfit
+pred  <- FE_pred.ds
 theta <- as.matrix(fit$params)
-Z <- pred$newdata
+Z     <- pred$newdata
 
 ## time invariant terms
   ## endogenous
 m.ic <- median(theta[,"beta_IC"])
   ## exogenous
-covs = colnames(theta)[grep("beta",colnames(theta))]
-covs = covs[-which(covs == "beta_IC")]
-m.driver = apply(theta[,covs],2,median)
+covs <- colnames(theta)[grep("beta",colnames(theta))]
+covs <- covs[-which(covs == "beta_IC")]
+m.driver <- apply(theta[,covs],2,median)
   ## parameter
-V.par = cov(theta[,covs])
+V.par <- cov(theta[,covs])
   ## process
 V.process = median(1/sqrt(theta[,"tau_add"]))
 
@@ -279,61 +303,86 @@ V.ic <- apply(pred$predict,2,var)
   ## exogenous
 V.driver <- apply(Z,2,cov)
   ## parameter
-m.par = apply(Z,2,apply,2,mean)
+m.par <- apply(Z,2,apply,2,mean)
 
-IC.recursion = V.ic[1]
+## recursive approach to propagating initial condition uncertainty
+IC.recursion <- V.ic[1]
 for(t in 2:length(V.ic)){
   IC.recursion[t] = m.ic^2*IC.recursion[t-1]
 }
-
 ## For IC formulation, the calculation ic     = m.ic^2*V.ic gives the current state
-V.pred <- data.frame(ic     = IC.recursion,
-               param  = apply(m.par,2,function(x){sum(x%*%t(x)*V.par)}),
-               driver = apply(as.vector(m.driver %*% t(m.driver))*V.driver,2,sum),
-               process = V.process
-               )
+
+## total predictive variance
+V.pred <- data.frame(ic      = IC.recursion,
+                     param   = apply(m.par,2,function(x){sum(x%*%t(x)*V.par)}),
+                     driver  = apply(as.vector(m.driver %*% t(m.driver))*V.driver,2,sum),
+                     process = V.process
+                     )
 V.pred.rel <- apply(V.pred,1,function(x) {cumsum(x)/sum(x)})
 
 #par(mfrow=c(2,1))
 
+## analytical approximation: stacked area plot of proportion variance
 stack.cols = c("black",2,3,"lightBlue")
-plot(meta.ds[[2]],V.pred.rel[1,],ylim=c(0,1),type='n',main="Analytical Approximation")
+plot(meta.ds[[2]],V.pred.rel[1,],ylim=c(0,1),type='n',main="Analytical Approximation",ylab="Proportion of Variance",xlab="Day of Year")
 ciEnvelope(meta.ds[[2]],rep(0,ncol(V.pred.rel)),V.pred.rel[1,],col=stack.cols[1])
 ciEnvelope(meta.ds[[2]],V.pred.rel[1,],V.pred.rel[2,],col=stack.cols[2])
 ciEnvelope(meta.ds[[2]],V.pred.rel[2,],V.pred.rel[3,],col=stack.cols[3])
 ciEnvelope(meta.ds[[2]],V.pred.rel[3,],V.pred.rel[4,],col=stack.cols[4])
 legend("topright",legend=rev(colnames(V.pred)),col=rev(stack.cols),lty=1,lwd=5)
 
-
+## numerical simulation: stacked area plot
 V.pred.sim.rel <- apply(rbind(varIPDE,varIPD,varIP,varI),2,function(x) {x/max(x)})
-plot(meta.ds[[2]],V.pred.sim.rel[1,],ylim=c(0,1),type='n',main="Via Simulation")
+plot(meta.ds[[2]],V.pred.sim.rel[1,],ylim=c(0,1),type='n',main="Simulation",ylab="Proportion of Variance",xlab="Day of Year")
 ciEnvelope(meta.ds[[2]],rep(0,ncol(V.pred.sim.rel)),V.pred.sim.rel[4,],col=stack.cols[1])
 ciEnvelope(meta.ds[[2]],V.pred.sim.rel[4,],V.pred.sim.rel[3,],col=stack.cols[2])
 ciEnvelope(meta.ds[[2]],V.pred.sim.rel[3,],V.pred.sim.rel[2,],col=stack.cols[3])
 ciEnvelope(meta.ds[[2]],V.pred.sim.rel[2,],V.pred.sim.rel[1,],col=stack.cols[4])
 legend("topright",legend=rev(colnames(V.pred)),col=rev(stack.cols),lty=1,lwd=5)
 
-sim.rel.mean = apply(V.pred.sim.rel,1,mean)
-sim.rel.mean = c(sim.rel.mean[4],diff(rev(sim.rel.mean)))
+## change in cumulative error with time
 
-rel.mean = apply(V.pred,2,mean)
-rel.mean = rel.mean/sum(rel.mean)
+### calculation of uncertainty in cumulative flux
+varI.cumsum    <- apply(apply(as.matrix(FE_pred.I$predict),1,cumsum),1,var)
+varIP.cumsum   <- apply(apply(as.matrix(FE_pred.IP$predict),1,cumsum),1,var)
+varIPD.cumsum  <- apply(apply(as.matrix(FE_pred.IPD$predict),1,cumsum),1,var)
+varIPDE.cumsum <- apply(apply(as.matrix(FE_pred.ds$predict),1,cumsum),1,var)
 
-var.part.table = rbind(rel.mean,sim.rel.mean)
-colnames(var.part.table) <- c("IC","Params","Drivers","Error")
-rownames(var.part.table) <- c("Analytical",'Simulation')
-knitr::kable(var.part.table)
-
+## numerical simulation: stacked area plot
+V.pred.simcum.rel <- apply(rbind(varIPDE.cumsum,varIPD.cumsum,varIP.cumsum,varI.cumsum),2,function(x) {x/max(x)})
+plot(meta.ds[[2]],V.pred.simcum.rel[1,],ylim=c(0,1),type='n',main="Cumulative Simulation",ylab="Proportion of Variance",xlab="Day of Year")
+ciEnvelope(meta.ds[[2]],rep(0,ncol(V.pred.simcum.rel)),V.pred.simcum.rel[4,],col=stack.cols[1])
+ciEnvelope(meta.ds[[2]],V.pred.simcum.rel[4,],V.pred.simcum.rel[3,],col=stack.cols[2])
+ciEnvelope(meta.ds[[2]],V.pred.simcum.rel[3,],V.pred.simcum.rel[2,],col=stack.cols[3])
+ciEnvelope(meta.ds[[2]],V.pred.simcum.rel[2,],V.pred.simcum.rel[1,],col=stack.cols[4])
+legend("bottomright",legend=rev(colnames(V.pred)),col=rev(stack.cols),lty=1,lwd=5)
 ```
 
+**FIGURE XX** _Partitioning of forecast uncertainties by source using both analytical approximation and simulation-based approaches. Both approaches agree that uncertainty is dominated by process error, that initial condition error decays to negligible rapidly, that parameter error shows a consistent diurnal cycle but no trend, and that driver error increases with time. By contrast, the error in the forecast cumulative NEE is dominated by parameter uncertainty, whose relative contribution starts off small but increases over the first five days, and then remains relatively constant. Process and initial condition errors start large but decay time, with process error decaying quickly and initial conditions decaying rapidly. Driver error is initially negligible but increases gradually over time._
 
+```{r, echo=FALSE}
+## table of mean variance contributions
+sim.rel.mean <- apply(V.pred.sim.rel,1,mean)
+sim.rel.mean <- c(sim.rel.mean[4],diff(rev(sim.rel.mean)))
 
+rel.mean <- apply(V.pred,2,mean)
+rel.mean <- rel.mean/sum(rel.mean)
 
-TO-DO:
+### calculation of uncertainty in cumulative flux
+varI.cum    <- var(apply(as.matrix(FE_pred.I$predict),1,sum))
+varIP.cum   <- var(apply(as.matrix(FE_pred.IP$predict),1,sum))
+varIPD.cum  <- var(apply(as.matrix(FE_pred.IPD$predict),1,sum))
+varIPDE.cum <- var(apply(as.matrix(FE_pred.ds$predict),1,sum))
+sim.rel.cum <- diff(c(0,varI.cum,varIP.cum,varIPD.cum,varIPDE.cum))/varIPDE.cum
 
-* clean up
-* write text
-* To be consistent with main text, should have random effects, model error should be AR1
+## table of results
+var.part.table <- rbind(rel.mean,sim.rel.mean,sim.rel.cum)
+colnames(var.part.table) <- c("IC","Params","Drivers","Error")
+rownames(var.part.table) <- c("Analytical",'Simulation','Cumul. Sim.')
+knitr::kable(var.part.table)
+```
+
+**TABLE XX** Mean partitioning of forecast error in instantaneous NEE according to both analytical and simulation approaches. Both approaches are in general agreement about the relative importance of the different sources of error. By contrast, the uncertainty in the cumulative NEE (Cumul. Sim.) shows that the contribution of process error is much lower, as many errors average out, and parameter error contributes much more to the overall uncertainty._
 
 ## APPENDIX
 ```{r,echo=FALSE}

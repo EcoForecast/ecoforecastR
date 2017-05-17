@@ -1,0 +1,36 @@
+---
+title: "First Principles Conceptual Figure"
+author: "Michael Dietze"
+output: html_document
+---
+
+```{r}
+#par(mfrow=c(2,1))
+nt = 80
+time = 1:nt
+Y.err = Tot.err = matrix(1,2,nt)
+r = c(0.95,1.01)
+e = 0.2
+for(t in 2:nt){
+  Y.err[,t] = r*Y.err[,t-1]
+  Tot.err[,t] = r*Tot.err[,t-1] + e
+}
+plot(time,Y.err[1,],ylim=c(0,max(Y.err)),type='l',
+     ylab="Predictive Error",main="Initial Conditions",lwd=3,
+     cex.lab=1.25)
+lines(time,Y.err[2,],lwd=3)
+text(time[40],Y.err[,40]+max(Y.err)*0.1,c("df/dY < 1","df/dY > 1"))
+
+nv = 3  ## natural variability
+plot(time,Tot.err[1,],ylim=c(0,2*max(Tot.err[1,])),type='l',
+          ylab="Predictive Error",main="Total Error",lwd=3,
+          cex.lab=1.25)
+lines(time,Tot.err[2,],lwd=3)
+abline(h=nv,lty=2)
+int = apply(Tot.err,1,function(x){findInterval(nv,x)})
+arrows(time[int],nv,time[int],0,length=0.1)
+text(time[40],c(Tot.err[1,40]+2*max(Tot.err[1,])*0.13,2*max(Tot.err[1,])*0.95),c("df/dY < 0","df/dY > 0"))
+text(time[nt*0.9],0.75*nv,"Natural\nVariability")
+
+```
+
