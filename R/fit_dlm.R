@@ -107,18 +107,20 @@ fit_dlm <- function(model=NULL,data){
     Pnames = gsub("(","",Pnames,fixed=TRUE)
     Pnames = gsub(")","",Pnames,fixed=TRUE)
     Pformula = paste(Pformula,paste0("+ beta",Pnames,"*Z[t,",1:ncol(Z),"]",collapse=" "))
-    Ppriors = paste0("beta",Pnames,"~dnorm(0,0.001)",collapse="\n")
+    Ppriors = paste0("  beta",Pnames,"~dnorm(0,0.001)",collapse="\n")
     my.model = sub(pattern="##BETAs",Ppriors,my.model)  
     mydat[["Z"]] = Z
     out.variables = c(out.variables,paste0("beta",Pnames))  
     
     ## missing data model
+    missCol <- which(Pnames != "Intercept")  ## don't need a missing data model on the intercept
+    Pmiss <- Pnames[missCol]
     MDprior <- paste(
-                paste0("mu",Pnames,"~dnorm(0,0.001)",collapse="\n"),
-                paste0("tau",Pnames,"~dgamma(0.01,0.01)",collapse="\n")
+                paste0("mu",Pmiss,"~dnorm(0,0.001)",collapse="\n"),"\n",
+                paste0(" tau",Pmiss,"~dgamma(0.01,0.01)",collapse="\n")
                )
     my.model <- sub(pattern="##MISSING_MU",MDprior,my.model)
-    MDformula <- paste0("Z[t,",1:ncol(Z),"] ~ dnorm(mu",Pnames,",tau",Pnames,")",collapse="\n")
+    MDformula <- paste0("Z[t,",missCol,"] ~ dnorm(mu",Pmiss,",tau",Pmiss,")",collapse="\n")
     my.model <- sub(pattern="##MISSING",MDformula,my.model)
   }
   
