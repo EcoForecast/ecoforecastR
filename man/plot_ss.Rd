@@ -21,4 +21,3 @@ plot time series output of a state-space model
 \author{
 Mike Dietze
 }
-

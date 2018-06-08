@@ -27,6 +27,30 @@ ciEnvelope <- function(x, ylo, yhi, ...) {
     border = NA, ...)
 }
 
+##' add transparency to a color
+##' @author Mike Dietze
+##' @export
+##' @param col color (by name, number, or hex string)
+##' @param alpha transparancy on a 0-1 scale (1=opaque)
+col.alpha <- function(col,alpha=1){
+  rgb = col2rgb(col)
+  rgb(rgb[1],rgb[2],rgb[3],alpha*255,maxColorValue=255)
+}
+
+##' weighted quantile
+##' @author Mike Dietze
+##' @export
+##' @param x numeric vector whose quantiles are wanted
+##' @param wt vector of weights
+##' @param q  quantile (at the moment must be scalar) 
+##' generalization of the base quantile function to allow values to be weighted. Useful for constructing interval estimates when using a particle filter or similar algorithm
+wtd.quantile <- function(x,wt,q){ 
+  ord <- order(x)
+  wstar <- cumsum(wt[ord])/sum(wt)
+  qi <- findInterval(q,wstar); qi[qi<1]=1;qi[qi>length(x)]=length(x)
+  return(x[ord[qi]])
+}
+
 ##' @name plot_ss
 ##' @title plot_ss
 ##' @export

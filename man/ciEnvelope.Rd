@@ -21,4 +21,3 @@ plot a confidence/credible interval
 \author{
 Mike Dietze
 }
-

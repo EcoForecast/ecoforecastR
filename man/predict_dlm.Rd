@@ -39,4 +39,3 @@ make predictions from fit dlm for new data
 \author{
 Mike Dietze
 }
-

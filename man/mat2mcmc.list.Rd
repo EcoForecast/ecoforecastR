@@ -15,4 +15,3 @@ convert a matrix to a CODA mcmc.list
 \author{
 Mike Dietze
 }
-

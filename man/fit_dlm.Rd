@@ -23,4 +23,3 @@ Fits a Bayesian state-space dynamic linear model using JAGS
 \author{
 Mike Dietze
 }
-

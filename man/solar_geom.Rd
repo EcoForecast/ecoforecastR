@@ -19,4 +19,3 @@ calculates potential top-of-atmosphere shortwave radiation as a function of day 
 \author{
 Mike Dietze
 }
-
