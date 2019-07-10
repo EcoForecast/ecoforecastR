@@ -10,8 +10,9 @@
 ##'  \item{n.iter}{number of mcmc iterations}
 ##' }
 ##' @param data  data frame containing observations and covariates
+##' @param dic   whether or not to calculate DIC
 ##' @description Fits a Bayesian state-space dynamic linear model using JAGS
-fit_dlm <- function(model=NULL,data){
+fit_dlm <- function(model=NULL,data,dic=TRUE){
 
   obs    = model$obs
   fixed  = model$fixed
@@ -152,6 +153,7 @@ fit_dlm <- function(model=NULL,data){
   chain.col = which(colnames(mfit)=="CHAIN")
   out$predict = mat2mcmc.list(mfit[,c(chain.col,pred.cols)])
   out$params   = mat2mcmc.list(mfit[,-pred.cols])
+  if(dic) out$DIC <- dic.samples(mc3.out, 1000)
   return(out)
   
 }  ## end fit_dlm

@@ -8,7 +8,7 @@ mat2mcmc.list <- function(w) {
   temp <- list()
   chain.col <- which(colnames(w) == "CHAIN")
   for (i in unique(w[, "CHAIN"])) {
-    temp[[i]] <- as.mcmc(w[w[, "CHAIN"] == i, -chain.col])
+    temp[[i]] <- coda:::as.mcmc(w[w[, "CHAIN"] == i, -chain.col])
   }
   return(as.mcmc.list(temp))
 }
