@@ -55,14 +55,18 @@ iterative_fit_dlm <- function(model = NULL,
   }
     
   ## set up priors
-  a_add <- r_add <- rep(0.1, nstep + 1)
+  tau_a <- tau_r <- matrix(0.1, nstep + 1,2)
+  nbeta <- ncol(BuildZ(fixed,data))
+  if(!is.null(nbeta)){
+    nbeta = nbeta + 1
+    betaCOV <- array(NA,c(nstep+1,nbeta,nbeta))
+    for(i in seq_len(nstep)) betaCOV[i,,] <- solve(diag(0.001,nbeta))
+  }
   
   ## set up storage
-  mp <- xp <- tauI <- matrix(NA, nstep, 3) ## median and CI
-  mq <- xq <- rep(NA, nstep) #quantile of prediction
-  mv <- xv <- rep(NA, nstep) #variance of prediction
-  dicI <- matrix(NA, nstep, 2)     #Iterative updating of DIC
-    
+  paramStats <- list()
+  xp <- array(NA, c(nstep,6,nf)) ## prediction lowerCI, median, upperCI, mean, var, observation quantile
+  dicI <- matrix(NA, nstep, 2)   ## Iterative updating of DIC
   for (i in seq_len(nstep)) {
       ## prep data, pad with NA for prediction
       if(method %in% c("refit","increment")){
@@ -77,41 +81,49 @@ iterative_fit_dlm <- function(model = NULL,
       }
 
       ## fit model
-      mcI <- fit_dlm(model=model,data=data)
+      mcI <- fit_dlm(model=model,data=mydat)
 
       ## calculate DIC
-      DIC <- dic.samples(mcI, 1000)
-      dicI[i, 1] <- sum(DIC$deviance)
-      dicI[i, 2] <- sum(DIC$penalty)
+      dicI[i, 1] <- sum(mcI$DIC$deviance)
+      dicI[i, 2] <- sum(mcI$DIC$penalty)
       
-      ## save parameters
-      mcI.m <- as.matrix(mcI.out) ## convert to matrix, remove burn-in
-      tauI[i, ] <- quantile(1 / sqrt(mcI.m[, 1]), c(0.025, 0.5, 0.975))
-      tbar <- mean(1 / sqrt(mcI.m[, 1]))
+      ## summerize parameters
+      paramStats[[i]] <- summary(mcI$params)
       
-      ## update priors
-      m  = mean(mcI.m[, 1])
-      s2 = var(mcI.m[, 1])
-      a_add[i + 1] <- m ^ 2 / s2
-      r_add[i + 1] <- m / s2
-      
-      if (FALSE) {
-        hist(mcI.m, probability = TRUE)
-        xseq <- seq(min(mcI.m), max(mcI.m), length = 1000)
-        lines(xseq, dgamma(xseq, a_add[i + 1], r_add[i + 1]))
+      ## update BETA priors
+      mcI.m  <- as.matrix(mcI$params) ## convert to matrix, remove burn-in
+      betaID <- which(grepl(pattern = "^beta",colnames(mcI.m)))
+      if(length(betaID)>0){
+        if(length(betaID)>1){
+          betaCOV[i+1,,] <- cov(mcI.m[,betaID])
+        } else {
+          betaCOV[i+1,,] <- var(mcI.m[,betaID])
+        }
+      } else { 
+        betaCOV <- NULL  ## nbeta = 0
       }
+
+      ## update TAU priors
+      tauID  <- which(grepl(pattern = "^tau",colnames(mcI.m)))
+      m <- paramStats[[i]]$statistics[tauID,1]
+      s <- paramStats[[i]]$statistics[tauID,2]
+      tau_a[i + 1,] <- m ^ 2 / s^2
+      tau_r[i + 1,] <- m / s^2
       
       ## save predictions
-      xp[i, ] <-
-        quantile(mcI.m[, 2], c(0.025, 0.5, 0.975)) ## prediction quantiles
-      xq[i]  <-
-        sum(mcI.m[, 2] < Y[i * dt + 1]) / nrow(mcI.m) ## Bayes pval, predictive error
-      xv[i]  <-
-        var(mcI.m[, 2])                         ## prediction variance
-      
-      ## prediction @ parameter mean
-      mp[i, ] <- Y[i * dt] + c(-1.96, 0, 1.96) * tbar
-      mq[i]  <- pnorm(Y[i * dt + 1], Y[i * dt], tbar)
-      mv[i]  <- tbar ^ 2
-    }
+      if (nf > 0) {
+        predID <- stop + 1:nf
+        mcI.x  <- as.matrix(mcI$predict[,predID])
+        xp[i,1:3,] <- apply(mcI.x,2,quantile,c(0.025, 0.5, 0.975)) ## prediction quantiles
+        xp[i,4,]   <- apply(mcI.x,2,mean)                          ## prediction mean
+        xp[i,5,]   <- apply(mcI.x,2,var)                           ## prediction variance
+        for(j in seq_along(predID)){
+          xp[i,6,j]  <- sum(mcI.x[,j] < OBS[stop + j]) / nrow(mcI.m) ## Bayes pval, predictive error
+        }
+      }
+  } ## end loop over steps
+  
+  return(list(paramStats=paramStats,xp=xp,dic=dicI,
+              tau_a=tau_a,tau_r=tau_r,betaCOV=betaCOV,
+              method=method,dt=dt,nf=nf))
 }

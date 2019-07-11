@@ -41,15 +41,20 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
     }
   }
   
+  ## special case: Random walk
+  if(toupper(fixed) == "RW"){
+    fixed = NULL
+    RW = TRUE
+  } else {
+    RW = FALSE
+  }
+  
   ## process design matrix
   if(is.null(fixed)){
     Z = NULL
   } else {
     if(is.null(data)) print("formula provided but covariate data is absent:",fixed)
-    fixed = ifelse(length(grep("~",fixed)) == 0,paste("~",fixed),fixed)
-    fixed = sub("x*~","~",x=fixed)
-    options(na.action = na.pass) 
-    Z = with(data,model.matrix(formula(fixed),na.action=na.pass)) 
+    Z <- BuildZ(fixed,data)
 #    Z = as.matrix(Z[,-which(colnames(Z)=="(Intercept)")])
     if(sum(is.na(Z))>0){
       print("WARNING: missing covariate data")
@@ -78,7 +83,7 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
   #RANDOM  }
 
   #### Fixed Effects
-  beta_IC~dnorm(0,0.001)
+  ##BETAIC
   ##BETAs
   ##MISSING_MU
   
@@ -101,6 +106,14 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
 
   #### prep model
   
+  ## Random Walk special case
+  if(RW){
+    my.model = sub(pattern="beta_IC*","",my.model,fixed = TRUE)
+    out.variables = out.variables[-which(out.variables=="beta_IC")]
+  } else {
+    my.model = sub(pattern="##BETAIC","beta_IC~dnorm(0,0.001)",my.model) 
+  }
+  
   ## FIXED EFFECTS
   Pformula = NULL
   if(!is.null(Z)){
@@ -115,14 +128,16 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
     
     ## missing data model
     missCol <- which(Pnames != "Intercept")  ## don't need a missing data model on the intercept
-    Pmiss <- Pnames[missCol]
-    MDprior <- paste(
-                paste0("mu",Pmiss,"~dnorm(0,0.001)",collapse="\n"),"\n",
-                paste0(" tau",Pmiss,"~dgamma(0.01,0.01)",collapse="\n")
-               )
-    my.model <- sub(pattern="##MISSING_MU",MDprior,my.model)
-    MDformula <- paste0("Z[t,",missCol,"] ~ dnorm(mu",Pmiss,",tau",Pmiss,")",collapse="\n")
-    my.model <- sub(pattern="##MISSING",MDformula,my.model)
+    if(length(missCol)>0){
+      Pmiss <- Pnames[missCol]
+      MDprior <- paste(
+                 paste0("mu",Pmiss,"~dnorm(0,0.001)",collapse="\n"),"\n",
+                 paste0(" tau",Pmiss,"~dgamma(0.01,0.01)",collapse="\n")
+                )
+      my.model <- sub(pattern="##MISSING_MU",MDprior,my.model)
+      MDformula <- paste0("Z[t,",missCol,"] ~ dnorm(mu",Pmiss,",tau",Pmiss,")",collapse="\n")
+      my.model <- sub(pattern="##MISSING",MDformula,my.model)
+    }
   }
   
   ## RANDOM EFFECTS
@@ -140,11 +155,11 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
   ## Define initial conditions
 
   ## initialize model
-  mc3 <- jags.model(file=textConnection(my.model),data=mydat,
+  mc3 <- rjags::jags.model(file=textConnection(my.model),data=mydat,
                     #inits=init,
                     n.chains=3)
   
-  mc3.out <- coda.samples(model=mc3, variable.names=out.variables, n.iter=n.iter)
+  mc3.out <- rjags::coda.samples(model=mc3, variable.names=out.variables, n.iter=n.iter)
   
   ## split output
   out = list(params=NULL,predict=NULL,model=my.model,data=mydat)
@@ -153,7 +168,24 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
   chain.col = which(colnames(mfit)=="CHAIN")
   out$predict = mat2mcmc.list(mfit[,c(chain.col,pred.cols)])
   out$params   = mat2mcmc.list(mfit[,-pred.cols])
-  if(dic) out$DIC <- dic.samples(mc3.out, 1000)
+  if(dic) out$DIC <- dic.samples(mc3, 1000)
   return(out)
   
 }  ## end fit_dlm
+
+
+
+BuildZ <- function(fixed, data) {
+  if (toupper(fixed) == "RW") {
+    return(NULL)
+  } else {
+    fixed = ifelse(length(grep("~", fixed)) == 0, paste("~", fixed), fixed)
+    fixed = sub("x*~", "~", x = fixed)
+    options(na.action = na.pass)
+    #  Z = with(data,model.matrix(formula(fixed),na.action=na.pass))
+    Z = model.matrix(formula(fixed),
+                     data = model.frame(formula(fixed), data),
+                     na.action = na.pass)
+    return(Z)
+  }
+}
