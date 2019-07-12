@@ -10,6 +10,9 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
   out.variables = update$out.variables
   Pformula = update$Pformula
   Xpriors = update$Xpriors
+  Pnames = update$Pnames
+  MDprior = update$MDprior
+  MDformula = update$MDformula
   
   ## parse if working with a single time series or additional dimensions
   if(is.null(ancillary.dims)){
@@ -36,8 +39,14 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
     }
     
     ## First deal with endogenous terms (X and X*cov interactions)
-    fixedX <- sub("~","",fixed, fixed=TRUE)
-    lm.terms <- gsub("[[:space:]]", "", strsplit(fixedX,split = "+",fixed=TRUE)[[1]])  ## split on + and remove whitespace
+    fixedX <- gsub("[[:space:]]", "", sub("~","",fixed, fixed=TRUE))
+    lm.terms <- unlist(strsplit(fixedX,split = "-",fixed=TRUE))  ## split on -
+    if(lm.terms[1] == ""){ ## was negative
+      lm.terms = lm.terms[-1]
+      lm.terms[1] = paste0("-",lm.terms[1])
+     }
+    if(length(lm.terms)>1){lm.terms[2] = paste0("-",lm.terms[2])} ## restore later minus
+    lm.terms <- unlist(strsplit(lm.terms,split = "+",fixed=TRUE))  ## split on + and remove whitespace
     X.terms <- strsplit(lm.terms,split = c("^"),fixed = TRUE)
     X.terms <- sapply(X.terms,function(str){unlist(strsplit(str,,split="*",fixed=TRUE))})
     X.terms <- which(sapply(X.terms,function(x){any(toupper(x) == "X")}))
@@ -85,6 +94,7 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
           } ## end fixed or time varying
           
           myBeta <- paste0("betaX_",covX)
+          Pnames = c(Pnames,covX)
           Xformula <- paste0(myBeta,"*x[",AD,"t-1]*",covX,myIndex)  ## was x[i,t-1]
           
         } else if(length(grep("^",X.terms[i],fixed=TRUE))==1){  ## POLYNOMIAL
@@ -98,7 +108,6 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
           Xformula <- paste0(myBeta,"*x[",AD,"t-1]")
         }
         
-        ## add variables to Pformula
         Pformula <- paste(Pformula,"+",Xformula)
         
         ## add priors
@@ -110,6 +119,7 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
       }  ## END LOOP OVER X TERMS
       
     }  ## end processing of X terms
+    Pnames = unique(Pnames)
     
     ############ build DESIGN MATRIX from formula #########
     fixedX <- sub("~","",fixed, fixed=TRUE)
@@ -129,30 +139,74 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
       #    Xf      <- t(t(Xf) - Xf.center)
     } else {Xf <- NULL} ## end fixed effects parsing
     
+    ## drop -1 term, isn't part of design so shouldn't get a beta
+    if(ncol(Xf) == 0) Xf <- NULL
+    
     ## build formula in JAGS syntax
     if (!is.null(Xf)) {
       Xf.names <- gsub(" ", "_", colnames(Xf))  ## JAGS doesn't like spaces in variable names
       Xf.names <- gsub("(", "", Xf.names,fixed=TRUE)  ## JAGS doesn't like parentheses in variable names
       Xf.names <- gsub(")", "", Xf.names,fixed=TRUE)
-      ## append to process model formula
-      Pformula <- paste(Pformula,
+      
+      ## remove items from design matrix that are already in model
+      real.names <- Xf.names[Xf.names %in% Pnames]
+      sel <- which(Xf.names %in% real.names)
+      if(length(sel)>0){
+        Xf <- as.data.frame(Xf)
+        Xf <- Xf[,-sel,drop=FALSE]
+        Xf.names <- Xf.names[-sel]
+      }
+      
+      ## append to process model formula: Xf
+      if(ncol(Xf)>0){
+        Pformula <- paste(Pformula,
                         paste0("+ beta", Xf.names, "*Xf[t,", seq_along(Xf.names), "]", collapse = " "))  # was Xf[rep[i]
+        Xpriors <- paste(Xpriors,paste0("     beta", Xf.names, "~dnorm(0,0.001)", collapse = "\n"))
+        MDprior <- paste(MDprior,
+                         "for(j in 1:",ncol(Xf),"){\n",
+                         "   muXf[j] ~ dnorm(0,0.001)\n",
+                         "   tauXf[j] ~ dgamma(0.01,0.01)\n",
+                         "}\n")
+        MDformula <- paste(MDformula,
+                           paste0("Xf[t,",seq_along(Xf.names),
+                                  "] ~ dnorm(muXf[",seq_along(Xf.names),
+                                  "],tauXf[",seq_along(Xf.names),"])",collapse="\n")
+                          )
+        out.variables <- c(out.variables, paste0("beta", Xf.names))
+      }
+      ## append using real names
+      if(length(real.names) > 0){
+        Pformula <- paste(Pformula,
+                          paste0("+ beta", real.names, "*",real.names,"[t]", collapse = " "))
+        Xpriors <- paste(Xpriors,paste0("     beta", real.names , " ~ dnorm(0,0.001)", collapse = "\n"))
+        out.variables <- c(out.variables, paste0("beta", real.names))
+      }
+      
       ## create 'rep' variable if not defined
 #     if(is.null(data$rep)){
 #        data$rep <- seq_len(nrow(Xf))
 #      }
-      ## create priors
-      Xpriors <- paste(Xpriors,paste0("     beta", Xf.names, "~dnorm(0,0.001)", collapse = "\n"))
-      ## update variables for JAGS to track
+
+            ## update variables for JAGS to track
       data[["Xf"]] <- Xf
-      out.variables <- c(out.variables, paste0("beta", Xf.names))
+    }
+    ## missing data model for Pnames (do only once across both interactions and Xf)
+    missCol <- which(Pnames != "Intercept")
+    if(length(missCol)>0){
+      Pmiss <- Pnames[missCol]
+      MDprior <- paste(
+        paste0("mu",Pmiss,"~dnorm(0,0.001)",collapse="\n"),"\n",
+        paste0(" tau",Pmiss,"~dgamma(0.01,0.01)",collapse="\n")
+      )
+      MDformula <- paste0(Pmiss,"[t] ~ dnorm(mu",Pmiss,",tau",Pmiss,")",collapse="\n")
     }
     
     check.dup.data(data,"Xf")
   
   } ## END FIXED IS NOT NULL
   
-  return(list(Pformula=Pformula,out.variables=out.variables,Xpriors=Xpriors,data=data))
+  return(list(Pformula=Pformula,out.variables=out.variables,Xpriors=Xpriors,
+              MDprior=MDprior, MDformula=MDformula,data=data))
 }
 
 check.dup.data <- function(data,loc){

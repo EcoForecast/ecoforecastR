@@ -56,9 +56,17 @@ iterative_fit_dlm <- function(model = NULL,
     
   ## set up priors
   tau_a <- tau_r <- matrix(0.1, nstep + 1,2)
-  nbeta <- ncol(BuildZ(fixed,data))
-  if(!is.null(nbeta)){
-    nbeta = nbeta + 1
+  fixed = model$fixed
+  if(fixed == ""){
+    nbeta = 0
+  } else {
+   # nbeta <- ncol(BuildZ(fixed,data))
+    fixedX <- sub("~","",fixed, fixed=TRUE)
+    lm.terms <- gsub("[[:space:]]", "", strsplit(fixedX,split = "+",fixed=TRUE)[[1]])  ## split on + and remove whitespace
+    lm.terms <- unlist(strsplit(lm.terms,split = "-",fixed=TRUE))  ## split on -
+    nbeta <- length(lm.terms)
+  }
+  if(!is.null(nbeta) & nbeta > 0){
     betaCOV <- array(NA,c(nstep+1,nbeta,nbeta))
     for(i in seq_len(nstep)) betaCOV[i,,] <- solve(diag(0.001,nbeta))
   }
@@ -75,13 +83,13 @@ iterative_fit_dlm <- function(model = NULL,
         start = 1 + (i - 1) * dt
       }
       stop  = i*dt
-      mydat <- data[start:(stop+nf),,drop=FALSE]
+      MyDAT <- data[start:(stop+nf),,drop=FALSE]
       if(nf > 0){
-        mydat[(stop+1:nf),obs] <- NA ## forecast by setting obs to missing data
+        MyDAT[(stop+1:nf),obs] <- NA ## forecast by setting obs to missing data
       }
 
       ## fit model
-      mcI <- fit_dlm(model=model,data=mydat)
+      mcI <- fit_dlm(model=model,data=MyDAT)
 
       ## calculate DIC
       dicI[i, 1] <- sum(mcI$DIC$deviance)

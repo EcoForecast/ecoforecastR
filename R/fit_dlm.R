@@ -21,8 +21,8 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
 
   data = as.data.frame(data)
   
-  out.variables = c("x","tau_obs","tau_add","beta_IC")
-  
+  out.variables = c("x","tau_obs","tau_add")
+  Pformula = NULL
   
   ## observation design matrix
   if(is.null(obs)){
@@ -41,24 +41,22 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
     }
   }
   
-  ## special case: Random walk
-  if(toupper(fixed) == "RW"){
-    fixed = NULL
-    RW = TRUE
-  } else {
-    RW = FALSE
-  }
+  #### prep data
+  mydat<-list(OBS=OBS,n=length(OBS),x_ic = 0,tau_ic = 0.00001,a_obs=0.1,r_obs=0.1,a_add=0.1,r_add=0.1)
+  
   
   ## process design matrix
-  if(is.null(fixed)){
-    Z = NULL
+  if(is.null(fixed) | fixed == ""){
+    fixed = NULL
   } else {
     if(is.null(data)) print("formula provided but covariate data is absent:",fixed)
-    Z <- BuildZ(fixed,data)
+    design <- ParseFixed(fixed,data,
+                         update=list(out.variables=out.variables,
+                                     data = mydat))
 #    Z = as.matrix(Z[,-which(colnames(Z)=="(Intercept)")])
-    if(sum(is.na(Z))>0){
+    if(sum(is.na(design$data))>0){
       print("WARNING: missing covariate data")
-      print(apply(is.na(Z),2,sum))
+      print(apply(is.na(design$data),2,sum))
     }
   }
   ## alternatively might be able to get fixed and random effects simultaneously using
@@ -83,7 +81,6 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
   #RANDOM  }
 
   #### Fixed Effects
-  ##BETAIC
   ##BETAs
   ##MISSING_MU
   
@@ -95,48 +92,27 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
   
   #### Process Model
   for(t in 2:n){
-    mu[t] <- beta_IC*x[t-1] ##PROCESS
+    mu[t] <- x[t-1] ##PROCESS
     x[t]~dnorm(mu[t],tau_add)
   }
 
   }"
   
-  #### prep data
-  mydat<-list(OBS=OBS,n=length(OBS),x_ic = 0,tau_ic = 0.00001,a_obs=0.1,r_obs=0.1,a_add=0.1,r_add=0.1)
-
+ 
   #### prep model
-  
-  ## Random Walk special case
-  if(RW){
-    my.model = sub(pattern="beta_IC*","",my.model,fixed = TRUE)
-    out.variables = out.variables[-which(out.variables=="beta_IC")]
-  } else {
-    my.model = sub(pattern="##BETAIC","beta_IC~dnorm(0,0.001)",my.model) 
-  }
-  
-  ## FIXED EFFECTS
-  Pformula = NULL
-  if(!is.null(Z)){
-    Pnames = gsub(" ","_",colnames(Z))
-    Pnames = gsub("(","",Pnames,fixed=TRUE)
-    Pnames = gsub(")","",Pnames,fixed=TRUE)
-    Pformula = paste(Pformula,paste0("+ beta",Pnames,"*Z[t,",1:ncol(Z),"]",collapse=" "))
-    Ppriors = paste0("  beta",Pnames,"~dnorm(0,0.001)",collapse="\n")
-    my.model = sub(pattern="##BETAs",Ppriors,my.model)  
-    mydat[["Z"]] = Z
-    out.variables = c(out.variables,paste0("beta",Pnames))  
+  if(!is.null(fixed)){
     
+    ## Insert regression priors
+    my.model = sub(pattern="##BETAs",design$Xpriors,my.model)  
+    out.variables = design$out.variables
+    mydat = design$data
+    Pformula = design$Pformula
+    Pnames = unique(design$Pnames)
+
     ## missing data model
-    missCol <- which(Pnames != "Intercept")  ## don't need a missing data model on the intercept
-    if(length(missCol)>0){
-      Pmiss <- Pnames[missCol]
-      MDprior <- paste(
-                 paste0("mu",Pmiss,"~dnorm(0,0.001)",collapse="\n"),"\n",
-                 paste0(" tau",Pmiss,"~dgamma(0.01,0.01)",collapse="\n")
-                )
-      my.model <- sub(pattern="##MISSING_MU",MDprior,my.model)
-      MDformula <- paste0("Z[t,",missCol,"] ~ dnorm(mu",Pmiss,",tau",Pmiss,")",collapse="\n")
-      my.model <- sub(pattern="##MISSING",MDformula,my.model)
+    if(!is.null(design$MDprior)){
+      my.model <- sub(pattern="##MISSING_MU",design$MDprior,my.model)
+      my.model <- sub(pattern="##MISSING",design$MDformula,my.model)
     }
   }
   
@@ -154,9 +130,10 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
   
   ## Define initial conditions
 
+  
+  print(my.model)
   ## initialize model
   mc3 <- rjags::jags.model(file=textConnection(my.model),data=mydat,
-                    #inits=init,
                     n.chains=3)
   
   mc3.out <- rjags::coda.samples(model=mc3, variable.names=out.variables, n.iter=n.iter)
