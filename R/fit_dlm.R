@@ -50,7 +50,7 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
     fixed = NULL
   } else {
     if(is.null(data)) print("formula provided but covariate data is absent:",fixed)
-    design <- ParseFixed(fixed,data,
+    design <- ParseFixed(fixed,cov.data=data,
                          update=list(out.variables=out.variables,
                                      data = mydat))
 #    Z = as.matrix(Z[,-which(colnames(Z)=="(Intercept)")])
@@ -145,7 +145,7 @@ fit_dlm <- function(model=NULL,data,dic=TRUE){
   chain.col = which(colnames(mfit)=="CHAIN")
   out$predict = mat2mcmc.list(mfit[,c(chain.col,pred.cols)])
   out$params   = mat2mcmc.list(mfit[,-pred.cols])
-  if(dic) out$DIC <- dic.samples(mc3, 1000)
+  if(dic) out$DIC <- dic.samples(mc3, 2000)
   return(out)
   
 }  ## end fit_dlm

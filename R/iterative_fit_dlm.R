@@ -76,6 +76,7 @@ iterative_fit_dlm <- function(model = NULL,
   xp <- array(NA, c(nstep,6,nf)) ## prediction lowerCI, median, upperCI, mean, var, observation quantile
   dicI <- matrix(NA, nstep, 2)   ## Iterative updating of DIC
   for (i in seq_len(nstep)) {
+      print(i)
       ## prep data, pad with NA for prediction
       if(method %in% c("refit","increment")){
         start = 1
@@ -121,10 +122,12 @@ iterative_fit_dlm <- function(model = NULL,
       ## save predictions
       if (nf > 0) {
         predID <- stop + 1:nf
-        mcI.x  <- as.matrix(mcI$predict[,predID])
-        xp[i,1:3,] <- apply(mcI.x,2,quantile,c(0.025, 0.5, 0.975)) ## prediction quantiles
-        xp[i,4,]   <- apply(mcI.x,2,mean)                          ## prediction mean
-        xp[i,5,]   <- apply(mcI.x,2,var)                           ## prediction variance
+        mcI.x  <- as.matrix(mcI$predict)
+        predID <- predID[predID <= ncol(mcI.x)]
+        mcI.x  <- mcI.x[,predID]
+        xp[i,1:3,predID-stop] <- apply(mcI.x,2,quantile,c(0.025, 0.5, 0.975)) ## prediction quantiles
+        xp[i,4,predID-stop]   <- apply(mcI.x,2,mean)                          ## prediction mean
+        xp[i,5,predID-stop]   <- apply(mcI.x,2,var)                           ## prediction variance
         for(j in seq_along(predID)){
           xp[i,6,j]  <- sum(mcI.x[,j] < OBS[stop + j]) / nrow(mcI.m) ## Bayes pval, predictive error
         }

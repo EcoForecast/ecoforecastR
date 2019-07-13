@@ -126,7 +126,7 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
     lm.terms <- gsub("[[:space:]]", "", strsplit(fixedX,split = "+",fixed=TRUE)[[1]])  ## split on
     if(lm.terms[1] != ""){
       Xf = model.matrix(formula(fixed),
-                        data = model.frame(formula(fixed), cov.data),
+                        data = model.frame(formula(fixed), cov.data,na.action = na.pass),
                         na.action = na.pass)
       Xf.cols <- colnames(Xf)
       Xf.cols <- sub(":","_",Xf.cols) ## for interaction terms, switch separator
