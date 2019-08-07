@@ -41,15 +41,17 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
     ## First deal with endogenous terms (X and X*cov interactions)
     fixedX <- gsub("[[:space:]]", "", sub("~","",fixed, fixed=TRUE))
     lm.terms <- unlist(strsplit(fixedX,split = "-",fixed=TRUE))  ## split on -
-    if(lm.terms[1] == ""){ ## was negative
+    if(length(lm.terms) > 0 & lm.terms[1] == ""){ ## was negative
       lm.terms = lm.terms[-1]
       lm.terms[1] = paste0("-",lm.terms[1])
      }
     if(length(lm.terms)>1){lm.terms[2] = paste0("-",lm.terms[2])} ## restore later minus
     lm.terms <- unlist(strsplit(lm.terms,split = "+",fixed=TRUE))  ## split on + and remove whitespace
-    X.terms <- strsplit(lm.terms,split = c("^"),fixed = TRUE)
-    X.terms <- sapply(X.terms,function(str){unlist(strsplit(str,,split="*",fixed=TRUE))})
-    X.terms <- which(sapply(X.terms,function(x){any(toupper(x) == "X")}))
+    if(length(lm.terms)>0){
+      X.terms <- strsplit(lm.terms,split = c("^"),fixed = TRUE)
+      X.terms <- sapply(X.terms,function(str){unlist(strsplit(str,,split="*",fixed=TRUE))})
+      X.terms <- which(sapply(X.terms,function(x){any(toupper(x) == "X")}))
+    }
     if(length(X.terms) > 0){
       ## rebuild fixed without X.terms
       fixed <- paste("~",paste(lm.terms[-X.terms],collapse = " + "))  
@@ -137,10 +139,12 @@ ParseFixed <- function(fixed,cov.data,update=NULL,ancillary.dims=NULL){
       ##Center the covariate data
       #    Xf.center <- apply(Xf, 2, mean, na.rm = TRUE)
       #    Xf      <- t(t(Xf) - Xf.center)
+      
+      ## drop -1 term, isn't part of design so shouldn't get a beta
+      if(ncol(Xf) == 0) Xf <- NULL
+      
     } else {Xf <- NULL} ## end fixed effects parsing
     
-    ## drop -1 term, isn't part of design so shouldn't get a beta
-    if(ncol(Xf) == 0) Xf <- NULL
     
     ## build formula in JAGS syntax
     if (!is.null(Xf)) {

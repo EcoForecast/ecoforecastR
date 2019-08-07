@@ -14,6 +14,12 @@
 ##' @param dt    number of time steps fit in each iteration, ignored for "increment"
 ##' @param nf    number of time steps to forecast into the future
 ##' @param prev  output from previous iteration (only used when method=increment; `model` priors will be ignored)
+##' @return List containing the following elements
+##' \describe{
+##'    \item{paramStats}{iterative list of parameter summaries}
+##'    \item{xp}{3D array [forecast number,6,nf] containing the following statistics: 3 quantiles [0.025, 0.5, 0.975], mean, var, data quantile (a.k.a) Bayesian p-value}
+##'     
+##' }
 ##' @description Iteratively fits a Bayesian state-space dynamic linear model using JAGS
 iterative_fit_dlm <- function(model = NULL,
                               data,
