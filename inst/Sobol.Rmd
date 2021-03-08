@@ -17,8 +17,8 @@ EFA = "~/git/EF_Activities/data/" ## local path to EF_Activities data
 load(file.path(EFA,"Ch11_UA.RData"))
 library(ecoforecastR)
 ```
-## Forward Simulation
 
+## Settings and Functions
 ```{r}
 ### settings
 s <- 6             ## Focal site for forward simulation
@@ -29,6 +29,7 @@ trans <- 0.8       ## set transparancy
 time = 1:(NT*2)    ## total time
 time1 = 1:NT       ## calibration period
 time2 = time1+NT   ## forecast period
+ci <- apply(as.matrix(out$predict),2,quantile,c(0.025,0.5,0.975)) ## hindcast CI
 
 plot.run <- function(){
   sel = seq(s,ncol(ci),by=NS)
@@ -41,15 +42,13 @@ plot.run <- function(){
 ##` @param IC    Initial Conditions
 ##` @param X     Drivers/covariates
 ##` @param theta Parameters
-##` @param alpha Site random effect
-##` @param beta  Slope of precipitation effect on K
-##` @param ppt   Precipitation forecast
+##` @param alpha Random effects
 ##` @param Q     Process error (default = 0 for deterministic runs)
 ##` @param n     Size of Monte Carlo ensemble
-forecastN <- function(IC,X,theta,alpha,ppt,Q=0,n=Nmc){
-  r = theta[1]
-  Kg = theta[2]
-  beta = theta[3]
+forecastN <- function(IC,X,theta,alpha,Q=0,n=Nmc){
+  r = theta[,"r_global"]
+  Kg = theta[,"K_global"]
+  beta = theta[,"beta"]
   ppt = X
   N <- matrix(NA,n,NT)  ## storage
   Nprev <- IC           ## initialize
@@ -61,6 +60,39 @@ forecastN <- function(IC,X,theta,alpha,ppt,Q=0,n=Nmc){
   }
   return(N)
 }
+```
+
+## Prep Monte Carlo samples
+```{r}
+## prep MC sample
+params <- as.matrix(out$params)
+IC <- as.matrix(out$predict)
+
+prow = sample.int(nrow(params),Nmc,replace=TRUE)
+IC  <- IC[prow,"N[6,30]"]
+theta <- params[prow,c("r_global","K_global","beta")]
+alpha <- params[prow,"alpha_site[6]"]
+Qmc <- 1/sqrt(params[prow,"Q"])  ## convert from precision to standard deviation
+
+drow = sample.int(nrow(ppt_ensemble),Nmc,replace=TRUE)
+X = ppt_ensemble[drow,]
+```
+
+
+## Default ensemble forecast
+```{r}
+## run ensemble forecast
+Nf <- forecastN(IC    = IC,  ## sample IC
+                X     = X,   ## Sample drivers
+                theta = theta, ## sample params
+                alpha = alpha, ## sample RE
+                Q     = Qmc,
+                n     = Nmc
+                )
+Nf.ci = apply(Nf,2,quantile,c(0.025,0.5,0.975))
+
+plot.run()
+ecoforecastR::ciEnvelope(time2,Nf.ci[1,],Nf.ci[3,],col=col.alpha(N.cols[4],trans))
 ```
 
 
