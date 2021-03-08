@@ -1,0 +1,66 @@
+---
+title: "Sobol Uncertainty Partitioning"
+author: "Michael Dietze"
+date: "3/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Context
+
+Code to experiment with translating one-at-a-time uncertainty partitioning into a global uncertainty partitioning. Will borrow the extended logistic example from EF_Activities Ch 11 
+```{r, echo=FALSE}
+EFA = "~/git/EF_Activities/data/" ## local path to EF_Activities data
+load(file.path(EFA,"Ch11_UA.RData"))
+library(ecoforecastR)
+```
+## Forward Simulation
+
+```{r}
+### settings
+s <- 6             ## Focal site for forward simulation
+Nmc = 1000         ## set number of Monte Carlo draws
+ylim = c(100,700)  ## set Y range on plot
+N.cols <- c("black","red","green","blue","orange") ## set colors
+trans <- 0.8       ## set transparancy
+time = 1:(NT*2)    ## total time
+time1 = 1:NT       ## calibration period
+time2 = time1+NT   ## forecast period
+
+plot.run <- function(){
+  sel = seq(s,ncol(ci),by=NS)
+  plot(time,time,type='n',ylim=ylim,ylab="N")
+  ecoforecastR::ciEnvelope(time1,ci[1,sel],ci[3,sel],col=col.alpha("lightBlue",0.6))
+  lines(time1,ci[2,sel],col="blue")
+  points(time1,No[s,])
+}
+
+##` @param IC    Initial Conditions
+##` @param X     Drivers/covariates
+##` @param theta Parameters
+##` @param alpha Site random effect
+##` @param beta  Slope of precipitation effect on K
+##` @param ppt   Precipitation forecast
+##` @param Q     Process error (default = 0 for deterministic runs)
+##` @param n     Size of Monte Carlo ensemble
+forecastN <- function(IC,X,theta,alpha,ppt,Q=0,n=Nmc){
+  r = theta[1]
+  Kg = theta[2]
+  beta = theta[3]
+  ppt = X
+  N <- matrix(NA,n,NT)  ## storage
+  Nprev <- IC           ## initialize
+  for(t in 1:NT){
+    K = pmax(1,Kg + alpha + beta*log(ppt[,t]/800))  ## calculate carrying capacity
+    mu = log(pmax(1,Nprev + r*Nprev*(1-Nprev/K)))   ## calculate mean
+    N[,t] <- rlnorm(n,mu,Q)                         ## predict next step
+    Nprev <- N[,t]                                  ## update IC
+  }
+  return(N)
+}
+```
+
+
