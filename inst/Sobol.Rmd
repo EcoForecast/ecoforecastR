@@ -66,10 +66,10 @@ forecastN <- function(IC,X,theta,alpha,Q=0,n=Nmc){
 ```{r}
 ## prep MC sample
 params <- as.matrix(out$params)
-IC <- as.matrix(out$predict)
+ICfull <- as.matrix(out$predict)
 
 prow = sample.int(nrow(params),Nmc,replace=TRUE)
-IC  <- IC[prow,"N[6,30]"]
+IC  <- ICfull[prow,"N[6,30]"]
 theta <- params[prow,c("r_global","K_global","beta")]
 alpha <- params[prow,"alpha_site[6]"]
 Qmc <- 1/sqrt(params[prow,"Q"])  ## convert from precision to standard deviation
@@ -85,14 +85,78 @@ X = ppt_ensemble[drow,]
 Nf <- forecastN(IC    = IC,  ## sample IC
                 X     = X,   ## Sample drivers
                 theta = theta, ## sample params
-                alpha = alpha, ## sample RE
-                Q     = Qmc,
-                n     = Nmc
+                alpha = alpha#, ## sample RE
+#                Q     = Qmc,
+#                n     = Nmc
                 )
 Nf.ci = apply(Nf,2,quantile,c(0.025,0.5,0.975))
 
 plot.run()
 ecoforecastR::ciEnvelope(time2,Nf.ci[1,],Nf.ci[3,],col=col.alpha(N.cols[4],trans))
 ```
+## prep Monte Carlo set B
+```{r}
+rowAvail = seq_len(nrow(params))[-prow] ## set of rows not yet sampled
+prowB = sample(rowAvail,Nmc,replace=TRUE)
+ICB  <- ICfull[prowB,"N[6,30]"]
+thetaB <- params[prowB,c("r_global","K_global","beta")]
+alphaB <- params[prowB,"alpha_site[6]"]
+QmcB <- 1/sqrt(params[prowB,"Q"])  ## convert from precision to standard deviation
 
+drowB = sample.int(nrow(ppt_ensemble),2*Nmc,replace=TRUE) ## oversample
+drowB = drowB[-which(drowB == drow)][1:Nmc] ## remove duplicate pairs
+  ## note: removing duplicates will overestimate var, but worried about zero var terms
+XB = ppt_ensemble[drowB,]
+```
+
+## Initial Sobal at CATEGORY level, d=5
+```{r}
+mu = matrix(apply(Nf,2,mean,na.rm=TRUE),nrow(Nf),ncol(Nf),byrow = TRUE)
+B = Nf - mu
+A = forecastN(ICB,XB,thetaB,alphaB) - mu#,QmcB,Nmc)
+AB= list()
+AB[[1]] = forecastN(ICB,X,theta,alpha) - mu#,Qmc,Nmc)
+AB[[2]] = forecastN(IC,XB,theta,alpha) - mu#,Qmc,Nmc)
+AB[[3]] = forecastN(IC,X,thetaB,alpha) - mu#,Qmc,Nmc)
+AB[[4]] = forecastN(IC,X,theta,alphaB) - mu#,Qmc,Nmc)
+AB[[5]] = forecastN(IC,X,theta,alpha) - mu#,QmcB,Nmc)
+```
+
+## Decomposition at CATEGORY level
+```{r}
+d = length(AB)
+f0f0 = apply(A*B,2,mean,na.rm=TRUE)
+VE = EV = matrix(NA,d,NT)
+
+## main effects
+for(i in 1:d){
+  VEi = A*AB[[i]]   ## version from Saltelli
+  VE[i,] = apply(VEi,2,mean,na.rm=TRUE) - f0f0 ## Var(E(Y|Xi)); f0f0 from Rcpp
+}
+S = t(t(VE)/apply(VE,2, sum))
+
+## total effects
+for(i in 1:d){
+  EVi = B*AB[[i]]
+  EV[i,] = apply(EVi,2,mean,na.rm=TRUE) - f0f0 ## E(Var(Y|Xi))
+}
+ST = t(1-t(EV)/apply(VE,2,sum))
+```
+
+```{r}
+N.cols <- c("black","green","red","orange","blue") ## set colors
+
+## main effects
+Sc = apply(S,2,cumsum)
+plot(time2,Sc[1,],ylim=c(0,1),type='n',main="Relative Variance: In-Sample",ylab="Proportion of Variance",xlab="time")
+ciEnvelope(time2,rep(0,ncol(S)),Sc[1,],col=N.cols[1])
+ciEnvelope(time2,Sc[1,],Sc[2,],col=N.cols[2])
+ciEnvelope(time2,Sc[2,],Sc[3,],col=N.cols[3])
+ciEnvelope(time2,Sc[3,],Sc[4,],col=N.cols[4])
+ciEnvelope(time2,Sc[4,],Sc[5,],col=N.cols[5])
+legend("topleft",legend=c("Process","RE","Parameter","Driver","InitCond"),col=rev(N.cols),lty=1,lwd=5)
+
+```
+
+## Todo: Q, random effects, interaction terms
 
