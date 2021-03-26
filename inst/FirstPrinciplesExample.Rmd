@@ -112,11 +112,16 @@ if(!file.exists("NOAA.RData") | CLEAN){
   library(rnoaa)
   #gefs_variables()
   TA <- gefs("Temperature_height_above_ground_ens",lat,lon,raw=TRUE)
+  TA_time = seq(to=384,length=ncol(TA$data),by=6)
+  TA$data(is.nan(TA$data)) = NA
+
   SW <- gefs("Downward_Short-Wave_Radiation_Flux_surface_6_Hour_Average_ens",lat,lon,raw=TRUE)
+  SW_time <- seq(to=384,length=ncol(SW$data),by=6)
+  SW$data(is.nan(SW$data)) = NA
+
 
   if(VERBOSE){
     ## plot shortwave radiation ensemble
-    SW_time <- seq(to=384,length=ncol(SW$data),by=6)
     plot(SW_time,SW$data[1,],ylim=range(SW$data),type='l')
     for(i in 2:nrow(SW$data)){
       lines(SW_time,SW$data[i,],type='l')
@@ -127,7 +132,6 @@ if(!file.exists("NOAA.RData") | CLEAN){
     lines(SW_time,ci_SW[2,],lwd=2)
     
     ## plot air temperature ensemble
-    TA_time = seq(to=384,length=ncol(TA$data),by=6)
     ci_TA <- apply(TA$data,2,quantile,c(0.05,0.5,0.95))
     plot(TA_time,TA$data[1,],ylim=range(TA$data),type='n')
     ciEnvelope(TA_time,ci_TA[1,],ci_TA[3,],col="lightBlue")
