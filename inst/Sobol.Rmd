@@ -43,9 +43,10 @@ plot.run <- function(){
 ##` @param X     Drivers/covariates
 ##` @param theta Parameters
 ##` @param alpha Random effects
-##` @param Q     Process error (default = 0 for deterministic runs)
+##` @param Q     Process error parameter (default = 0 for deterministic runs)
+##` @param zp    Process error random draws
 ##` @param n     Size of Monte Carlo ensemble
-forecastN <- function(IC,X,theta,alpha,Q=0,n=Nmc){
+forecastN <- function(IC,X,theta,alpha,Q=0,zp=0,n=Nmc){
   r = theta[,"r_global"]
   Kg = theta[,"K_global"]
   beta = theta[,"beta"]
@@ -55,7 +56,8 @@ forecastN <- function(IC,X,theta,alpha,Q=0,n=Nmc){
   for(t in 1:NT){
     K = pmax(1,Kg + alpha + beta*log(ppt[,t]/800))  ## calculate carrying capacity
     mu = log(pmax(1,Nprev + r*Nprev*(1-Nprev/K)))   ## calculate mean
-    N[,t] <- rlnorm(n,mu,Q)                         ## predict next step
+#    N[,t] <- rlnorm(n,mu,Q)                         ## predict next step
+    N[,t] <- exp(mu+Q*zp)
     Nprev <- N[,t]                                  ## update IC
   }
   return(N)
@@ -68,14 +70,16 @@ forecastN <- function(IC,X,theta,alpha,Q=0,n=Nmc){
 params <- as.matrix(out$params)
 ICfull <- as.matrix(out$predict)
 
-prow = sample.int(nrow(params),Nmc,replace=TRUE)
+prow = sample.int(nrow(params),Nmc,replace=TRUE)  ## parameter & IC rows to sample
 IC  <- ICfull[prow,"N[6,30]"]
 theta <- params[prow,c("r_global","K_global","beta")]
 alpha <- params[prow,"alpha_site[6]"]
 Qmc <- 1/sqrt(params[prow,"Q"])  ## convert from precision to standard deviation
 
-drow = sample.int(nrow(ppt_ensemble),Nmc,replace=TRUE)
+drow = sample.int(nrow(ppt_ensemble),Nmc,replace=TRUE) ## driver rows to sample
 X = ppt_ensemble[drow,]
+
+zp = rnorm(Nmc) ## Z-scores for process error
 ```
 
 
@@ -85,8 +89,9 @@ X = ppt_ensemble[drow,]
 Nf <- forecastN(IC    = IC,  ## sample IC
                 X     = X,   ## Sample drivers
                 theta = theta, ## sample params
-                alpha = alpha#, ## sample RE
-#                Q     = Qmc,
+                alpha = alpha, ## sample RE
+                Q     = Qmc,
+                zp    = zp
 #                n     = Nmc
                 )
 Nf.ci = apply(Nf,2,quantile,c(0.025,0.5,0.975))
@@ -107,35 +112,63 @@ drowB = sample.int(nrow(ppt_ensemble),2*Nmc,replace=TRUE) ## oversample
 drowB = drowB[-which(drowB == drow)][1:Nmc] ## remove duplicate pairs
   ## note: removing duplicates will overestimate var, but worried about zero var terms
 XB = ppt_ensemble[drowB,]
+
+zpB = rnorm(Nmc)
 ```
 
-## Initial Sobal at CATEGORY level, d=5
+## Initial Sobal at CATEGORY level, d=6
 ```{r}
+## Flip A and B to match Saltelli definition of Ci = all B except Ai
+A = forecastN(ICB,XB,thetaB,alphaB,QmcB,zpB,Nmc)         # A
+B = Nf                                                   # B
+
+## Saltelli eq 4.6: f0 = E(Y)
 mu = matrix(apply(Nf,2,mean,na.rm=TRUE),nrow(Nf),ncol(Nf),byrow = TRUE)
-B = Nf - mu
-A = forecastN(ICB,XB,thetaB,alphaB) - mu#,QmcB,Nmc)
-AB= list()
-AB[[1]] = forecastN(ICB,X,theta,alpha) - mu#,Qmc,Nmc)
-AB[[2]] = forecastN(IC,XB,theta,alpha) - mu#,Qmc,Nmc)
-AB[[3]] = forecastN(IC,X,thetaB,alpha) - mu#,Qmc,Nmc)
-AB[[4]] = forecastN(IC,X,theta,alphaB) - mu#,Qmc,Nmc)
-AB[[5]] = forecastN(IC,X,theta,alpha) - mu#,QmcB,Nmc)
+
+## Saltelli eq 4.7: fi = E(Y|Xi)-E(Y)
+B = B - mu                                               # B
+A = A - mu                                               # A
+AB = list() ## Saltelli's Ci
+AB[[1]] = forecastN(ICB,X,theta,alpha,Qmc,zp,Nmc) - mu   # ABi
+AB[[2]] = forecastN(IC,XB,theta,alpha,Qmc,zp,Nmc) - mu   # ABd
+AB[[3]] = forecastN(IC,X,thetaB,alphaB,QmcB,zp,Nmc) - mu # ABp
+AB[[4]] = forecastN(IC,X,theta,alpha,Qmc,zpB,Nmc) - mu   # ABz
+names(AB)=c("i","d","p","z")
+#AB[[11]] = forecastN(IC,X,theta,alphaB,Qmc,zp,Nmc) - mu # ABa parameter uncertainty: random effects
+#AB[[12]] = forecastN(IC,X,theta,alpha,QmcB,zp,Nmc) - mu # ABq parameter uncertainty about process error
+
+## Saltelli eq 4.8: fij = E(Y|Xi,Xj) - fi - fj - E(Y) 
+AB[[5]] = forecastN(ICB,XB,theta,alpha,Qmc,zp,Nmc) - mu   # ABid
+AB[[6]] = forecastN(ICB,X,thetaB,alphaB,QmcB,zp,Nmc) - mu # ABip
+AB[[7]] = forecastN(ICB,X,theta,alpha,Qmc,zpB,Nmc) - mu   # ABiz
+AB[[8]] = forecastN(IC,XB,thetaB,alphaB,QmcB,zp,Nmc) - mu # ABdp
+AB[[9]] = forecastN(IC,XB,theta,alpha,Qmc,zpB,Nmc) - mu   # ABdz
+AB[[10]]= forecastN(IC,X,thetaB,alphaB,QmcB,zpB,Nmc) - mu # ABpz
+names(AB)[5:10]=c("id","ip","iz","dp","dz","pz")
+for(i in 5:10){
+  AB[[i]] = AB[[i]] - AB[[substr(names(AB)[i],1,1)]] - AB[[substr(names(AB)[i],2,2)]]
+}
 ```
 
 ## Decomposition at CATEGORY level
 ```{r}
 d = length(AB)
 f0f0 = apply(A*B,2,mean,na.rm=TRUE)
+f02  = apply(A,2,mean,na.rm=TRUE)^2  ## Saltelli eqn 4.22
 VE = EV = matrix(NA,d,NT)
 
-## main effects
+## main effects: Si = V(fi)/V(Y)
 for(i in 1:d){
-  VEi = A*AB[[i]]   ## version from Saltelli
+  VEi = A*AB[[i]]   ## version from Saltelli eqn 4.21
   VE[i,] = apply(VEi,2,mean,na.rm=TRUE) - f0f0 ## Var(E(Y|Xi)); f0f0 from Rcpp
 }
 S = t(t(VE)/apply(VE,2, sum))
 
-## total effects
+## interactions: Sij = Vij/V(Y)
+## Saltelli 4.10c: Vij =V(fij(Xi,Xj))=V(E(Y|Xi,Xj))−V(E(Y|Xi))−V(E(Y|Xj))
+
+
+## total effects: 
 for(i in 1:d){
   EVi = B*AB[[i]]
   EV[i,] = apply(EVi,2,mean,na.rm=TRUE) - f0f0 ## E(Var(Y|Xi))
@@ -144,19 +177,18 @@ ST = t(1-t(EV)/apply(VE,2,sum))
 ```
 
 ```{r}
-N.cols <- c("black","green","red","orange","blue") ## set colors
-
+N.cols <- c("black","green","red","orange","cyan","blue") ## set colors
+N.cols = RColorBrewer::brewer.pal(n=nrow(S),name = "Set3")
 ## main effects
 Sc = apply(S,2,cumsum)
 plot(time2,Sc[1,],ylim=c(0,1),type='n',main="Relative Variance: In-Sample",ylab="Proportion of Variance",xlab="time")
 ciEnvelope(time2,rep(0,ncol(S)),Sc[1,],col=N.cols[1])
-ciEnvelope(time2,Sc[1,],Sc[2,],col=N.cols[2])
-ciEnvelope(time2,Sc[2,],Sc[3,],col=N.cols[3])
-ciEnvelope(time2,Sc[3,],Sc[4,],col=N.cols[4])
-ciEnvelope(time2,Sc[4,],Sc[5,],col=N.cols[5])
-legend("topleft",legend=c("Process","RE","Parameter","Driver","InitCond"),col=rev(N.cols),lty=1,lwd=5)
+for(i in 2:nrow(S)){
+  ciEnvelope(time2,Sc[i-1,],Sc[i,],col=N.cols[i])
+}
+legend("topleft",legend = rev(names(AB)),col=rev(N.cols),lty=1,lwd=5) #legend=c("Process","Q","RE","Parameter","Driver","InitCond")
 
 ```
 
-## Todo: Q, random effects, interaction terms
+## Todo: Q, random effects
 
